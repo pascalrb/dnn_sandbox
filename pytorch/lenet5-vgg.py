@@ -23,15 +23,51 @@ import numpy as np
 # Change the current working directory to the Google drive folder for path to dataloader
 #os.chdir('/content/drive/MyDrive/...')
 
+sys.path.insert(0, './tools')
+#sys.path.insert(0, '/home/ubuntu/dnn_sandbox/pytorch/tools')
+
 # You cannot change this line.
 from dataloader import CIFAR10
 
+#-------------------------------------------------
+# Specifying the device for computation
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+if device =='cuda':
+    print("Training on GPU...")
+else:
+    print("Training on CPU...")
+
+#-------------------------------------------------
+
+"""
+Hyperparameters/Global Constants
+"""
+TRAIN_BATCH_SIZE = 128
+VAL_BATCH_SIZE = 100
+INITIAL_LR = 0.01
+MOMENTUM = 0.9
+REG = 1e-3 #1e-5
+EPOCHS = 10
+DATAROOT = "./data"
+CHECKPOINT_PATH = "./saved_model"
+DIRECT_CKPT_PATH = "./saved_model/model.h5"
+
+# FLAG for loading the pretrained model
+TRAIN_FROM_SCRATCH = True
+CURRENT_LR = INITIAL_LR
+
+
+
+#########################################
+#                                       #       
+#       Helper Functions                # 
+#                                       #
+#########################################
 
 '''
-Helper functions
+Visualization for traning and validation loss and accuracy
 '''
-#-------------------------------------------------
-def plot_tran_val_stats(train_ll, val_ll):
+def plot_train_val_stats(train_ll, val_ll, train_al, val_al):
 
     # Matplotlib data visualization
     plt.plot(train_ll)
@@ -48,13 +84,13 @@ def plot_tran_val_stats(train_ll, val_ll):
         plt.text(i, val_ll[i], f"{(val_ll[i]):>0.2f}|{val_al[i]:>0.1f}%", fontsize='xx-small', ha="center")
     plt.show()
 
-#-------------------------------------------------
 
 """
 Code for loading checkpoint and recover epoch id.
 """
 def load_checkpoint():
-    CKPT_PATH = "./saved_model/model.h5"
+    global CURRENT_LR
+
     def get_checkpoint(ckpt_path):
         try:
             ckpt = torch.load(ckpt_path)
@@ -63,28 +99,72 @@ def load_checkpoint():
             return None
         return ckpt
 
-    ckpt = get_checkpoint(CKPT_PATH)
+    ckpt = get_checkpoint(DIRECT_CKPT_PATH)
     if ckpt is None or TRAIN_FROM_SCRATCH:
         if not TRAIN_FROM_SCRATCH:
             print("Checkpoint not found.")
         print("Training from scratch ...")
         start_epoch = 0
-        current_learning_rate = INITIAL_LR
+        CURRENT_LR = INITIAL_LR
     else:
-        print("Successfully loaded checkpoint: %s" %CKPT_PATH)
+        print("Successfully loaded checkpoint: %s" %DIRECT_CKPT_PATH)
         net.load_state_dict(ckpt['net'])
         start_epoch = ckpt['epoch'] + 1
-        current_learning_rate = ckpt['lr']
+        CURRENT_LR = ckpt['lr']
         print("Starting from epoch %d " %start_epoch)
 
-    print("Starting from learning rate %f:" %current_learning_rate)
+    print("Starting from learning rate %f:" %CURRENT_LR)
 
-#-------------------------------------------------
+    return start_epoch
 
 
-#-------------------------------------------------
-# Inferencing Code - Dataloading support from specific Dropbox is broken:
 
+"""
+Data preprocessing + augmentation 
+
+Normalization reference value for mean/std:
+mean(RGB-format): (0.4914, 0.4822, 0.4465)
+std(RGB-format): (0.2023, 0.1994, 0.2010)
+"""
+def data_processing():
+
+    mean_t = (0.4914, 0.4822, 0.4465)
+    std_t  = (0.2023, 0.1994, 0.2010)
+
+    # Specify preprocessing function.
+    # Reference mean/std value for
+    transform_train = transforms.Compose(
+            [transforms.ToTensor(),
+             # Applies normalization on the input
+             transforms.Normalize(mean_t, std_t),
+             transforms.RandomCrop(32),
+             transforms.RandomHorizontalFlip(0.5),
+             ]
+        )
+
+    transform_val = transforms.Compose(
+            [transforms.ToTensor(),
+             # Applies normalization on the input data
+             transforms.Normalize(mean_t, std_t),
+             transforms.RandomCrop(32),
+             transforms.RandomHorizontalFlip(0.5),
+             ]
+        )
+
+
+    # Dataset Loader
+    trainset = CIFAR10(root=DATAROOT, train=True, download=True, transform=transform_train)
+    trainloader = torch.utils.data.DataLoader(trainset, batch_size=TRAIN_BATCH_SIZE, shuffle=True, num_workers=1)
+    valset = CIFAR10(root=DATAROOT, train=False, download=True, transform=transform_val)
+    valloader = torch.utils.data.DataLoader(valset, batch_size=VAL_BATCH_SIZE, shuffle=True, num_workers=1)
+
+    return trainloader, valloader
+
+
+
+"""
+Inferencing Code - Dataloading support from specific Dropbox is broken:
+"""
 def inference_test():
     from dataloader2 import CIFAR10_2
     import csv
@@ -155,167 +235,12 @@ def inference_test():
             #id+=len(inputs)
             id+=1
 
-#-------------------------------------------------
-
-"""
-Building the model
-"""
-# Create the neural network module: LeNet-5
-class LeNet5(nn.Module):
-    def __init__(self):
-        super(LeNet5, self).__init__()
-        self.flatten = nn.Flatten() #dim=0 is maintained
-        self.mod_arch = nn.Sequential(
-#Brute force; BIGGERR (like VGG but half)
-#83.8% accuracy 
-            nn.Conv2d(3, 64, 3),
-            nn.BatchNorm2d(64),
-            nn.ReLU(),
-            nn.Conv2d(64, 128, 3),
-            nn.BatchNorm2d(128),
-            nn.ReLU(),
-            nn.MaxPool2d(2, 2),
-
-            nn.Conv2d(128, 256, 3),
-            nn.BatchNorm2d(256),
-            nn.ReLU(),
-            nn.Conv2d(256, 512, 3),
-            nn.BatchNorm2d(512),
-            nn.ReLU(),
-            nn.MaxPool2d(2, 2),
-
-            nn.Flatten(),
-            nn.Dropout(0.5),
-            nn.Linear(512*5*5, 220),
-            nn.BatchNorm1d(220),
-            nn.ReLU(),
-            nn.Linear(220, 90),
-            nn.BatchNorm1d(90),
-            nn.ReLU(),
-            nn.Linear(90, 10),
-        )
-
-    def forward(self, x):
-      logits = self.mod_arch(x)
-      #return nn.Softmax(logits, dim=1)
-      return logits
-
-#-------------------------------------------------
-"""
-Hyperparameters
-"""
-
-# Setting some hyperparameters
-TRAIN_BATCH_SIZE = 128
-VAL_BATCH_SIZE = 100
-INITIAL_LR = 0.01
-MOMENTUM = 0.9
-REG = 1e-3 #1e-5
-EPOCHS = 60
-DATAROOT = "./data"
-CHECKPOINT_PATH = "./saved_model"
-
-# FLAG for loading the pretrained model
-TRAIN_FROM_SCRATCH = True
-
-#-------------------------------------------------
-"""
-Data preprocessing + augmentation 
-
-Normalization reference value for mean/std:
-mean(RGB-format): (0.4914, 0.4822, 0.4465)
-std(RGB-format): (0.2023, 0.1994, 0.2010)
-"""
-
-mean_t = (0.4914, 0.4822, 0.4465)
-std_t  = (0.2023, 0.1994, 0.2010)
-
-# Specify preprocessing function.
-# Reference mean/std value for
-transform_train = transforms.Compose(
-        [transforms.ToTensor(),
-         # Applies normalization on the input
-         transforms.Normalize(mean_t, std_t),
-         transforms.RandomCrop(32),
-         transforms.RandomHorizontalFlip(0.5),
-         ]
-    )
-
-transform_val = transforms.Compose(
-        [transforms.ToTensor(),
-         # Applies normalization on the input data
-         transforms.Normalize(mean_t, std_t),
-         transforms.RandomCrop(32),
-         transforms.RandomHorizontalFlip(0.5),
-         ]
-    )
-
-
-# Dataset Loader
-trainset = CIFAR10(root=DATAROOT, train=True, download=True, transform=transform_train)
-trainloader = torch.utils.data.DataLoader(trainset, batch_size=TRAIN_BATCH_SIZE, shuffle=True, num_workers=1)
-valset = CIFAR10(root=DATAROOT, train=False, download=True, transform=transform_val)
-valloader = torch.utils.data.DataLoader(valset, batch_size=VAL_BATCH_SIZE, shuffle=True, num_workers=1)
-
-#-------------------------------------------------
-# Specifying the device for computation
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
-if device =='cuda':
-    print("Training on GPU...")
-else:
-    print("Training on CPU...")
-
-#-------------------------------------------------
-
-
-net = LeNet5()
-
-# Initializing the weights of Conv, FC layers with xavier initialization
-#torch.nn.init.xavier_normal_(net.mod_arch[0].weight)
-#torch.nn.init.xavier_normal_(net.mod_arch[4].weight)
-#torch.nn.init.xavier_normal_(net.mod_arch[9].weight)
-#torch.nn.init.xavier_normal_(net.mod_arch[12].weight)
-#torch.nn.init.xavier_normal_(net.mod_arch[15].weight)
-
-#torch.nn.init.xavier_uniform_(net.mod_arch[0].weight)
-#torch.nn.init.xavier_uniform_(net.mod_arch[4].weight)
-#torch.nn.init.xavier_uniform_(net.mod_arch[9].weight)
-#torch.nn.init.xavier_uniform_(net.mod_arch[12].weight)
-#torch.nn.init.xavier_uniform_(net.mod_arch[15].weight)
-
-#Removed because no improvement
-
-net = net.to(device)
-
-
-# Load checkpoint
-load_checkpoint()
-
-#-------------------------------------------------
-"""
-In the targeted classification task, cross entropy loss with L2
-regularization is used as the learning object.
-"""
-
-# Create loss function and specify regularization
-criterion = nn.CrossEntropyLoss()
-
-# Optimizer configuration
-# L2 regularization through weight_decay
-#optimizer = torch.optim.SGD(LeNet5_model.parameters(), lr=l_rate)
-#optimizer = torch.optim.SGD(net.parameters(), lr=INITIAL_LR,
-#                            weight_decay=REG, momentum=MOMENTUM)
-#                            #momentum=momen)
-optimizer = torch.optim.Adam(net.parameters(), lr=INITIAL_LR,
-                             weight_decay=REG)
-#optimizer = torch.optim.Adam(LeNet5_model.parameters(), lr=l_rate) #0.001
 
 
 """
-Training and validating model over entire CIFAR-10 training dataset. 
+Training
 """
-
-def training():
+def training(net, trainloader):
     # Switch to train mode
     net.train()
 
@@ -353,20 +278,20 @@ def training():
         train_loss += loss.item()
 
 
-        #global_step += 1
-        #if global_step % 100 == 0:
-        #    avg_loss = train_loss / (batch_idx + 1)
-        #pass
     avg_loss = train_loss / len(trainloader)
 
     avg_acc = correct_examples / total_examples
     print(f"Training loss: {avg_loss:>0.4f}, Training accuracy: {100*avg_acc:>0.1f}")
-    #print("Training loss: %.4f, Training accuracy: %.4f" %(avg_loss, avg_acc))
-    train_ll.append(avg_loss)
-    train_al.append(avg_acc*100)
     print(f"\n{datetime.datetime.now()}")
+    
+    return avg_loss, (avg_acc*100)
 
-def validation():
+
+
+"""
+Validation/testing
+"""
+def validation(net, valloader):
     # Switch to evalution mode
     net.eval()
 
@@ -401,82 +326,176 @@ def validation():
 
     avg_loss = val_loss / len(valloader)
     avg_acc = correct_examples / total_examples
-    #print("Validation loss: %.4f, Validation accuracy: %.4f" % (avg_loss, avg_acc))
     print(f"Validation loss: {avg_loss:>0.4f}, Validation accuracy: {100*avg_acc:>0.1f}")
-    val_ll.append(avg_loss)
-    val_al.append(avg_acc*100)
+
+    return avg_loss, (avg_acc*100)
+
+
+
+"""
+Training and validating model over entire CIFAR-10 training dataset. 
+"""
+def train_validate(net, start_epoch, trainloader, valloader):
+    global CURRENT_LR
+
+    # To use for plotting
+    train_ll = []   # [train_loss_avg, ]
+    val_ll = []     # [val_loss_avg, ]
+    train_al = []   # [train_accuracy, ]
+    val_al = []     # [val_accuracy, ]
+
+    best_val_acc = 0
+
+    # Tracking elapsed time for training and validating model
+    t0 = time.time()
+
+    for i in range(start_epoch, EPOCHS):
+        print("\n\nEpoch %d:" %i)
+        print(f"{datetime.datetime.now()}")
+
+        train_loss, train_acc = training(net, trainloader)
+        train_ll.append(train_loss)
+        train_al.append(train_acc)
+        
+        val_loss, val_acc = validation(net, valloader)
+        val_ll.append(val_loss)
+        val_al.append(val_acc)
+
+
+        """
+        Learning rate decaying
+        """
+        DECAY_EPOCHS = 2
+        DECAY = 0.80
+        if i % DECAY_EPOCHS == 0 and i != 0:
+            CURRENT_LR *= DECAY
+            for param_group in optimizer.param_groups:
+                # Assign the learning rate parameter
+                param_group['lr'] = CURRENT_LR
+
+            print("Current learning rate has decayed to %f" %CURRENT_LR)
+
+        # Save for checkpoint
+        if val_acc > best_val_acc:
+            best_val_acc = val_acc
+            if not os.path.exists(CHECKPOINT_PATH):
+                os.makedirs(CHECKPOINT_PATH)
+            print("Saving ...")
+            state = {'net': net.state_dict(),
+                     'epoch': i,
+                     'lr': CURRENT_LR}
+            torch.save(state, os.path.join(CHECKPOINT_PATH, 'model.h5'))
+
+    t1 = time.time()
+    totalt = t1-t0
+
+    print("\nOptimization finished.")
+    print(f"\nTotal Training and Testing Time: {totalt}")
+
+    return train_ll, val_ll, train_al, val_al
+
+#-------------------------------------------------
+
+"""
+Model base class
+"""
+# Create the neural network module: LeNet-5
+class LeNet5(nn.Module):
+    def __init__(self):
+        super(LeNet5, self).__init__()
+        self.flatten = nn.Flatten() #dim=0 is maintained
+        self.mod_arch = nn.Sequential(
+# Inital model shape (~60% accuracy)
+            nn.Conv2d(3, 6, 5),
+            nn.BatchNorm2d(6),
+            nn.ReLU(),
+            nn.MaxPool2d(2, 2),
+
+            nn.Conv2d(6, 16, 5),
+            nn.BatchNorm2d(16),
+            nn.ReLU(),
+            nn.MaxPool2d(2, 2),
+
+            nn.Flatten(),             
+            #nn.Dropout(0.5),
+            nn.Linear(16*5*5, 120),   
+            nn.BatchNorm1d(120),
+            nn.ReLU(),
+            nn.Linear(120, 84),
+            nn.BatchNorm1d(84),
+            nn.ReLU(),
+            nn.Linear(84, 10),
+#------------------------------------
+
+##Brute force; BIGGERR (like VGG but half)
+##83.8% accuracy 
+#            nn.Conv2d(3, 64, 3),
+#            nn.BatchNorm2d(64),
+#            nn.ReLU(),
+#            nn.Conv2d(64, 128, 3),
+#            nn.BatchNorm2d(128),
+#            nn.ReLU(),
+#            nn.MaxPool2d(2, 2),
+#
+#            nn.Conv2d(128, 256, 3),
+#            nn.BatchNorm2d(256),
+#            nn.ReLU(),
+#            nn.Conv2d(256, 512, 3),
+#            nn.BatchNorm2d(512),
+#            nn.ReLU(),
+#            nn.MaxPool2d(2, 2),
+#
+#            nn.Flatten(),
+#            nn.Dropout(0.5),
+#            nn.Linear(512*5*5, 220),
+#            nn.BatchNorm1d(220),
+#            nn.ReLU(),
+#            nn.Linear(220, 90),
+#            nn.BatchNorm1d(90),
+#            nn.ReLU(),
+#            nn.Linear(90, 10),
+        )
+
+    def forward(self, x):
+      logits = self.mod_arch(x)
+      #return nn.Softmax(logits, dim=1)
+      return logits
 
 
 
 
+#########################################################################
+#                                                                       #
+#                 "entrypoint" of lenet5-vgg.py module                  #
+#                                                                       #
+#########################################################################
 
-# To use for plotting
-train_ll = []   # [train_loss_avg, ]
-val_ll = []     # [val_loss_avg, ]
-train_al = []   # [train_accuracy, ]
-val_al = []     # [val_accuracy, ]
+net = LeNet5()
+# TODO: change net --> model (after I make sure loading from saved model['net'] works
+
+net = net.to(device)
+
+# Load checkpoint
+start_epoch = load_checkpoint()
+
+# Create loss function and specify regularization
+criterion = nn.CrossEntropyLoss()
+
+# Optimizer configuration
+# L2 regularization through weight_decay
+#optimizer = torch.optim.SGD(LeNet5_model.parameters(), lr=l_rate)
+#optimizer = torch.optim.SGD(net.parameters(), lr=INITIAL_LR,
+#                            weight_decay=REG, momentum=MOMENTUM)
+#                            #momentum=momen)
+optimizer = torch.optim.Adam(net.parameters(), lr=INITIAL_LR,
+                             weight_decay=REG)
+#optimizer = torch.optim.Adam(LeNet5_model.parameters(), lr=l_rate) #0.001
 
 
 # Start the training/validation process
-# The process should take about 5 minutes on a GTX 1070-Ti
-# if the code is written efficiently.
-global_step = 0
-best_val_acc = 0
+trainloader, valloader = data_processing()
+train_ll, val_ll, train_al, val_al = train_validate(net, start_epoch, trainloader, valloader)
 
-t0 = time.time()
-
-for i in range(start_epoch, EPOCHS):
-    print("\n\nEpoch %d:" %i)
-    print(f"{datetime.datetime.now()}")
-
-    training()
-
-    validation()
-
-
-    """
-    Assignment 4(b)
-    Learning rate is an important hyperparameter to tune. Specify a
-    learning rate decay policy and apply it in your training process.
-    Briefly describe its impact on the learning curveduring your
-    training process.
-    Reference learning rate schedule:
-    decay 0.98 for every 2 epochs. You may tune this parameter but
-    minimal gain will be achieved.
-    Assignment 4(c)
-    As we can see from above, hyperparameter optimization is critical
-    to obtain a good performance of DNN models. Try to fine-tune the
-    model to over 70% accuracy. You may also increase the number of
-    epochs to up to 100 during the process. Briefly describe what you
-    have tried to improve the performance of the LeNet-5 model.
-    """
-    DECAY_EPOCHS = 2
-    DECAY = 0.80
-    if i % DECAY_EPOCHS == 0 and i != 0:
-        current_learning_rate *= DECAY
-        for param_group in optimizer.param_groups:
-            # Assign the learning rate parameter
-            param_group['lr'] = current_learning_rate
-
-        print("Current learning rate has decayed to %f" %current_learning_rate)
-
-    # Save for checkpoint
-    if avg_acc > best_val_acc:
-        best_val_acc = avg_acc
-        if not os.path.exists(CHECKPOINT_PATH):
-            os.makedirs(CHECKPOINT_PATH)
-        print("Saving ...")
-        state = {'net': net.state_dict(),
-                 'epoch': i,
-                 'lr': current_learning_rate}
-        torch.save(state, os.path.join(CHECKPOINT_PATH, 'model.h5'))
-
-t1 = time.time()
-totalt = t1-t0
-
-print("\nOptimization finished.")
-print(f"\nTotal Training and Testing Time: {totalt}")
-
-plot_train_val_stats(train_ll, val_ll)
+plot_train_val_stats(train_ll, val_ll, train_al, val_al)
 
 
