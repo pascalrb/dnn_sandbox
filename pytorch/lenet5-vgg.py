@@ -33,9 +33,9 @@ from dataloader import CIFAR10
 # Specifying the device for computation
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 if device =='cuda':
-    print("Training on GPU...")
+    print("Training on GPU...\n")
 else:
-    print("Training on CPU...")
+    print("Training on CPU...\n")
 
 #-------------------------------------------------
 
@@ -47,7 +47,7 @@ VAL_BATCH_SIZE = 100
 INITIAL_LR = 0.01
 MOMENTUM = 0.9
 REG = 1e-3 #1e-5
-EPOCHS = 10
+EPOCHS = 60
 DATAROOT = "./data"
 CHECKPOINT_PATH = "./saved_model"
 DIRECT_CKPT_PATH = "./saved_model/model.h5"
@@ -113,7 +113,7 @@ def load_checkpoint():
         CURRENT_LR = ckpt['lr']
         print("Starting from epoch %d " %start_epoch)
 
-    print("Starting from learning rate %f:" %CURRENT_LR)
+    print("Starting from learning rate %f:\n" %CURRENT_LR)
 
     return start_epoch
 
@@ -163,7 +163,10 @@ def data_processing():
 
 
 """
-Inferencing Code - Dataloading support from specific Dropbox is broken:
+Inferencing Code 
+
+(with support to download from hard-coded Dropbox)
+    TODO: Generalize inference
 """
 def inference_test():
     from dataloader2 import CIFAR10_2
@@ -238,7 +241,7 @@ def inference_test():
 
 
 """
-Training
+Training for 1 epoch
 """
 def training(net, trainloader):
     # Switch to train mode
@@ -270,11 +273,7 @@ def training(net, trainloader):
         optimizer.step()
 
         # Calculate predicted labels
-        #_, predicted =
-        # Calculate accuracy
-        #total_examples += len(targets)  # set before for loop
         correct_examples += (outputs.argmax(1) == targets).type(torch.float).sum().item()
-        #train_loss += loss
         train_loss += loss.item()
 
 
@@ -289,7 +288,7 @@ def training(net, trainloader):
 
 
 """
-Validation/testing
+Validation/testing for 1 epoch
 """
 def validation(net, valloader):
     # Switch to evalution mode
@@ -390,7 +389,7 @@ def train_validate(net, start_epoch, trainloader, valloader):
     totalt = t1-t0
 
     print("\nOptimization finished.")
-    print(f"\nTotal Training and Testing Time: {totalt}")
+    print(f"\nTotal Training and Testing Time: {totalt/60:>0.2f}m{totalt%60:>0.2f}s")
 
     return train_ll, val_ll, train_al, val_al
 
@@ -406,6 +405,7 @@ class LeNet5(nn.Module):
         self.flatten = nn.Flatten() #dim=0 is maintained
         self.mod_arch = nn.Sequential(
 # Inital model shape (~60% accuracy)
+# Now ~72.2% with 10% random dropout 
             nn.Conv2d(3, 6, 5),
             nn.BatchNorm2d(6),
             nn.ReLU(),
@@ -417,7 +417,7 @@ class LeNet5(nn.Module):
             nn.MaxPool2d(2, 2),
 
             nn.Flatten(),             
-            #nn.Dropout(0.5),
+            nn.Dropout(0.1),
             nn.Linear(16*5*5, 120),   
             nn.BatchNorm1d(120),
             nn.ReLU(),
