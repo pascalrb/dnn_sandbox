@@ -1,9 +1,10 @@
 # DNN Sandbox
 DNN Processing Investigation <br/><br/>
 
+
 ## Standard Computer Vision Model
 ./lenet5_vgg --> mix between LeNet5 and VGG architecture. 
-  - 83.8% accuracy in image classification on CIFAR-10 dataset. <br/><br/>
+  - 83.8% accuracy in image classification on CIFAR-10 dataset. 
 
 ## Deep Compression 
 ./deep_compression --> implementaiton of the deep compression paper by **Han, et al. (2015)** with a few additional features.
