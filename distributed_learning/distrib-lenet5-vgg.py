@@ -336,16 +336,11 @@ class LeNet5_VGG(nn.Module):
 
 
 
-
 #########################################################################
 #                                                                       #
 #            "entrypoint" of distrib-lenet5-vgg.py module               #
 #                                                                       #
 #########################################################################
-
-#import intel_extension_for_pytorch as ipex
-    # requirements:
-    # Ubuntu* 18.04 or newer
 
 if __name__ == '__main__':
 
@@ -412,12 +407,6 @@ if __name__ == '__main__':
     for p in processes:
         p.join()
 
-    #trainloader = torch.utils.data.DataLoader(trainset, batch_size=TRAIN_BATCH_SIZE, shuffle=True, num_workers=1)
-    #valloader = torch.utils.data.DataLoader(valset, batch_size=VAL_BATCH_SIZE, shuffle=True, num_workers=1)
-    #print(f'Initial Validation:')
-    #validation(device, net, valloader)
-    #train_validate(device, net, trainloader, valloader, CURRENT_LR)
-
     print(f'Final Validation:')
     #valloader = torch.utils.data.DataLoader(valset, batch_size=VAL_BATCH_SIZE, shuffle=True, num_workers=1)
     acc1 = validation(device, net, valloader)
@@ -435,46 +424,3 @@ if __name__ == '__main__':
 
     # Saving model in "TorchScript" format (for deployment)
     torch.jit.script(net).save(os.path.join(CHECKPOINT_PATH, 'model_TS.pt'))
-
-
-
-
-
-#"""
-#Real-time Imgae Recognition Inferencing:
-#
-#OpenCV Video Processing
-#"""
-##def video_processing(device, net, valloader):
-#def video_processing(device, net):
-#    import cv2
-#
-#    capt = cv2.VideoCapture('vid.mp4')
-#
-#    net = LeNet5_VGG()
-#    net = net.to(device)
-#    net.eval()
-#
-#    # Loading the best weight paramters
-#    if(torch.cuda.is_available()):
-#        net.load_state_dict(torch.load("model.h5"))
-#        print('loading to GPU...')
-#    else:
-#        net.load_state_dict(torch.load("model.h5", map_location=torch.device('cpu')))
-#        print('loading to CPU...')
-#
-#    # Check accuracy of loaded model
-#    validation(device, net, valloader)
-#
-#    while (capt.isOpened()):
-#
-#        ret, frame = capt.read()
-#        frame = cv2.resize(frame, (224, 224))#...)
-#        net(frame)
-#
-#        with torch.no_grad():
-#            # Copy frame to device
-#            frame = frame.to(device)
-#
-#            # Generate prediction from the DNN.
-#            outputs = net(frame)
