@@ -1,6 +1,8 @@
 # DNN Sandbox
 DNN Processing Investigation <br/><br/>
 
+## Primer on HW-SW codesign for DNN Processing
+`Guide_to_SW_Compiler_HW_Opts_for_DL.pdf`
 
 ## Standard Computer Vision Model
 `lenet5_vgg` --> mix between LeNet5 and VGG architecture. 
